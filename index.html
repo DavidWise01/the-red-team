@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Red Team — can the witness be captured?</title>
+<style>
+  :root{
+    --bg:#0a0710; --panel:#140d20; --panel2:#1b1230; --edge:#2e2148;
+    --ink:#ece3f7; --dim:#9a86bd; --faint:#6b5a8c;
+    --violet:#a78bfa; --violet2:#c4b5fd; --glow:#7c3aed;
+    --good:#34d399; --burnt:#fb7185; --seen:#a78bfa; --real:#fb7185; --safe:#34d399; --bad:#fb7185; --warn:#fbbf24;
+    --mono:'SFMono-Regular',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--serif);line-height:1.55;
+    background-image:radial-gradient(1200px 600px at 72% -10%,#1a1030 0%,transparent 60%),
+      radial-gradient(900px 520px at 0% 100%,#150b28 0%,transparent 55%);}
+  .wrap{max-width:1060px;margin:0 auto;padding:42px 26px 90px}
+  header{border-bottom:1px solid var(--edge);padding-bottom:22px;margin-bottom:30px}
+  .kicker{font-family:var(--mono);font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--violet);opacity:.9}
+  h1{font-size:32px;line-height:1.13;margin:.32em 0 .18em;font-weight:600}
+  h1 em{color:var(--violet2);font-style:italic}
+  .sub{color:var(--dim);font-size:15.5px;max-width:78ch}
+  .lin{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-top:14px}
+  .lin b{color:var(--violet);font-weight:500}
+  section{margin:38px 0}
+  h2{font-size:13px;font-family:var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--violet2);
+    border-left:2px solid var(--glow);padding-left:11px;margin:0 0 6px}
+  .lede{color:var(--dim);font-size:15px;margin:0 0 18px;max-width:80ch}
+  .lede b{color:var(--violet2);font-weight:400}
+  .panel{background:linear-gradient(180deg,var(--panel),#100a1b);border:1px solid var(--edge);border-radius:14px;
+    padding:20px;box-shadow:0 1px 0 #2e2148 inset,0 24px 60px -40px #000}
+  .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-bottom:8px}
+  .grp{display:flex;gap:6px;align-items:center;background:#100a1b;border:1px solid var(--edge);border-radius:9px;padding:5px 8px}
+  .grp .gl{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;margin-right:2px}
+  button{font-family:var(--mono);font-size:12px;color:var(--ink);background:#241738;border:1px solid var(--edge);
+    border-radius:7px;padding:7px 11px;cursor:pointer;transition:.15s}
+  button:hover{background:#2e1f48;border-color:var(--violet)}
+  button.on{background:var(--glow);border-color:var(--violet2);color:#fff;box-shadow:0 0 14px -4px var(--glow)}
+  button.danger.on{background:var(--bad);border-color:#fda4af;color:#1a0410;box-shadow:0 0 14px -4px var(--bad)}
+  label.sl{font-family:var(--mono);font-size:11px;color:var(--dim);display:flex;align-items:center;gap:8px}
+  input[type=range]{accent-color:var(--violet);width:100px}
+  canvas{display:block;border-radius:10px;background:#0c0717;border:1px solid var(--edge);max-width:100%}
+  .cap{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:7px}
+  .lab{display:grid;grid-template-columns:1fr auto;gap:22px;align-items:start}
+  @media(max-width:860px){.lab{grid-template-columns:1fr}}
+  .bigrow{display:flex;gap:22px;flex-wrap:wrap;align-items:baseline;margin-bottom:8px}
+  .stat .v{font-family:var(--mono);font-size:22px;font-weight:600}
+  .stat .k{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+  .verdict{font-family:var(--mono);font-size:15px;font-weight:700;padding:5px 13px;border-radius:8px;display:inline-block}
+  .verdict.hold{color:#04150d;background:var(--safe)} .verdict.cap{color:#1a0410;background:var(--bad)}
+  .matrix{display:grid;grid-template-columns:auto 1fr 1fr;gap:5px;margin-top:14px;font-family:var(--mono);font-size:11px}
+  .matrix .h{color:var(--faint);text-align:center;padding:4px}
+  .matrix .cell{border:1px solid var(--edge);border-radius:6px;padding:8px 6px;text-align:center;color:var(--dim);background:#130c1f}
+  .matrix .cell.here{border-color:var(--violet2);box-shadow:0 0 10px -3px var(--glow);color:var(--ink)}
+  .matrix .cell.safe{border-color:var(--safe)} .matrix .cell.unsafe{border-color:#5c1f2e}
+  .note{color:var(--dim);font-size:13.5px;border-left:2px solid var(--edge);padding-left:13px;margin:16px 0 0}
+  .note b{color:var(--violet2);font-weight:400}
+  code{font-family:var(--mono);font-size:.92em;color:var(--violet2);background:#170f28;padding:1px 5px;border-radius:5px}
+  footer{margin-top:46px;border-top:1px solid var(--edge);padding-top:18px;color:var(--faint);font-family:var(--mono);font-size:11px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Purple Paper · side-sheet · learning machines · VI · red team</div>
+  <h1>The Red Team — can the <em>witness</em> be captured?</h1>
+  <div class="sub">An adversary runs items past the gate and <em>optimizes against it</em> — inflating the observed
+    score, or drifting the quality down — trying to get burnt food onto the admitted side. Switch the gate between
+    fixed/adaptive and bit/score and watch which corner holds. This is the open problem the whole series points at,
+    turned into a test you can run.</div>
+  <div class="lin"><b>green dot = good · red dot = burnt</b> · seen-rejection = what the gate believes ·
+    real-burnt-admitted = what actually got through · the gap between them <b>is the capture</b></div>
+</header>
+
+<section>
+  <h2>The lab — attack the gate, watch it hold or fall</h2>
+  <p class="lede">Items stream in, each with a hidden true quality. The gate sees only a score and admits or refuses.
+    Turn the <b>adversary</b> on: under <b>Goodhart</b> it inflates the score to push burnt items past the line; under
+    <b>drift</b> it slowly lowers real quality. Watch the two traces diverge — <span style="color:var(--seen)">what the
+    gate sees</span> staying calm while <span style="color:var(--real)">what really gets admitted</span> rots. Only one
+    of the four corners keeps them together.</p>
+
+  <div class="panel">
+    <div class="controls">
+      <div class="grp"><span class="gl">gate</span><button id="gFix" class="on">FIXED</button><button id="gAdapt">ADAPTIVE</button></div>
+      <div class="grp"><span class="gl">feedback</span><button id="fBit" class="on">BIT</button><button id="fScore">SCORE</button></div>
+      <div class="grp"><span class="gl">attack</span><button id="aNone" class="on">none</button><button id="aGood">goodhart</button><button id="aDrift">drift</button></div>
+      <button id="adv" class="danger">⚔ adversary OFF</button>
+      <button id="run" class="on">▶ run</button>
+      <button id="reset">reset</button>
+      <label class="sl">speed <input type="range" id="speed" min="1" max="60" value="24"></label>
+    </div>
+
+    <div class="lab">
+      <div>
+        <canvas id="stream" width="600" height="300"></canvas>
+        <div class="cap">items flow toward the gate (dashed line = threshold in score-space). dot color = TRUE quality.
+          faint tail = how far the adversary lifted the observed score. red dots ending up <b>above</b> the line = burnt
+          food admitted = capture.</div>
+        <canvas id="spark" width="600" height="120" style="margin-top:14px"></canvas>
+        <div class="cap"><span style="color:var(--seen)">seen-rejection (gate's belief)</span> vs
+          <span style="color:var(--real)">burnt-among-admitted (reality)</span> — shaded gap = laundering</div>
+      </div>
+      <div style="min-width:230px">
+        <div class="bigrow">
+          <div class="stat"><div class="v" id="seen" style="color:var(--seen)">—</div><div class="k">seen rejection</div></div>
+          <div class="stat"><div class="v" id="real" style="color:var(--real)">—</div><div class="k">burnt admitted</div></div>
+        </div>
+        <div><span class="verdict hold" id="verdict">GATE HOLDING</span></div>
+        <div class="matrix" id="matrix">
+          <div class="h"></div><div class="h">BIT out</div><div class="h">SCORE out</div>
+          <div class="h" style="writing-mode:vertical-rl;text-align:center">FIXED</div>
+          <div class="cell" id="c_fix_bit">safe</div><div class="cell" id="c_fix_score">gamed</div>
+          <div class="h" style="writing-mode:vertical-rl;text-align:center">ADAPT</div>
+          <div class="cell" id="c_adapt_bit">launders</div><div class="cell" id="c_adapt_score">launders</div>
+        </div>
+        <div class="cap" style="margin-top:8px">the only corner that keeps burnt food out under attack:
+          <b style="color:var(--safe)">fixed + bit</b></div>
+      </div>
+    </div>
+
+    <div class="note" id="labnote">Start with <b>fixed + bit</b>, adversary on, attack <b>goodhart</b> — the gate holds:
+      the adversary only gets one bit back, can't aim, and burnt food stays out. Now flip feedback to <b>score</b>:
+      the adversary climbs the gradient and pushes nearly every burnt item through while the gate's seen-rejection
+      barely twitches. Switch attack to <b>drift</b> and gate to <b>adaptive</b>: the gate keeps its rejection rate
+      "normal" by quietly lowering its own line — and admits almost everything burnt. Three of four corners fail.
+      The witness has to be <em>fixed</em> AND emit <em>one bit</em>, or the channel captures it.</div>
+  </div>
+</section>
+
+<section>
+  <h2>The reading</h2>
+  <p class="lede">This is the firewall from every prior paper, stress-tested. The adversary is the <b>channel</b> — it
+    optimizes, that's its job. The gate is the <b>witness</b>. Two independent ways the witness fails, both verified:
+    give the channel a <em>gradient</em> (rich feedback) and it climbs around a fixed gate; let the witness
+    <em>adapt</em> to the traffic and it relabels its own standard until the drift is invisible. The defense is the
+    same two-part rule the whole series kept landing on — <b>one bit to the channel, a fixed predicate set from
+    outside</b> — and here you can watch it be the one corner that survives.</p>
+
+  <div class="note" style="margin-top:8px;font-size:14px"><b style="color:var(--violet2)">The honest limit.</b> Even
+    fixed-and-bit only holds if the gate measures the <em>true invariant</em>, not a proxy correlated with it — game a
+    proxy and a fixed gate falls too, just slower. And against a channel far more capable than the gate, no fixed
+    predicate is provably safe forever. That's the open frontier this lab points at: the un-capturable-yet-useful
+    witness. The lab shows you where the wall is, not how to walk through it.</div>
+</section>
+
+<footer>
+  THE RED TEAM · purple paper side-sheet VI · adversarial companion to the series<br>
+  verified in Node before build · goodhart+score → fixed gate gamed (30% burnt admitted, ~all of stream's burnt) · goodhart+bit → held (0%) · drift+fixed → alarms (100% reject, 0% burnt) · drift+adaptive → launders (0% reject, 89% burnt) · safe corner = fixed + bit<br>
+  Goodhart's law · reference monitors 1972 · the un-capturable witness: open
+</footer>
+
+<script>
+"use strict";
+const DIMS={ stream:[600,300], spark:[600,120] };
+function fit(cv){ const [W,H]=DIMS[cv.id]||[cv.width,cv.height]; const dpr=window.devicePixelRatio||1;
+  const needW=Math.round(W*dpr);
+  if(cv.width!==needW){ cv.width=needW; cv.height=Math.round(H*dpr); cv.style.width=W+'px'; cv.style.height=H+'px'; }
+  const g=cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); return {g,w:W,h:H}; }
+let CLOCK=0;
+function rng(s){let x=s>>>0;return()=>{x=(Math.imul(x,1103515245)+12345)&0x7fffffff;return x/0x7fffffff;};}
+let R=rng(0x5EED);
+function gauss(){let u=0,v=0;while(!u)u=R();while(!v)v=R();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const BURNT=0, THR0=0.5, LEVMAX=2.0, TARGET=0.3, SD=0.6;
+
+// ---- state ----
+let gate='fixed', feedback='bit', attack='none', advOn=false;
+let thr, muQ, lever, leverGood, rejWin, admQ, seenBuf, realBuf, items, driftT;
+function resetEngine(){ R=rng(0x5EED); thr=THR0; muQ=0.55; lever=0; leverGood=0; rejWin=[]; admQ=[];
+  seenBuf=[]; realBuf=[]; items=[]; driftT=0; }
+function tick(){
+  if(attack==='drift' && advOn){ driftT+=1; muQ=Math.max(-0.4, 0.8 - 1.4*Math.min(1,driftT/3000)); }
+  else if(attack==='drift'){ muQ=0.8; }
+  else muQ=0.3;
+  const q=clamp(muQ+SD*gauss(),-2,2);
+  if(advOn && attack==='goodhart'){
+    if(feedback==='score') lever=clamp(thr-q+0.05,0,LEVMAX);
+    else { leverGood+=0.012*gauss(); leverGood=clamp(leverGood,0,LEVMAX); lever=leverGood; }
+  } else lever=0;
+  const s=q+lever, admit=s>=thr;
+  rejWin.push(admit?0:1); if(rejWin.length>200) rejWin.shift();
+  if(admit){ admQ.push(q); if(admQ.length>200) admQ.shift(); }
+  if(gate==='adaptive'){ const rr=rejWin.reduce((a,b)=>a+b,0)/rejWin.length; thr+=0.02*(TARGET-rr); }
+  // spawn visual item
+  items.push({q,s,admit,x:0}); if(items.length>70) items.shift();
+  const seen=rejWin.reduce((a,b)=>a+b,0)/rejWin.length;
+  const real=admQ.length? admQ.filter(x=>x<BURNT).length/admQ.length : 0;
+  seenBuf.push(seen); if(seenBuf.length>180) seenBuf.shift();
+  realBuf.push(real); if(realBuf.length>180) realBuf.shift();
+  return {seen,real};
+}
+
+// score-space -> y mapping
+function sy(score,h){ return h - ((clamp(score,-2,2)+2)/4)*h; }
+function drawStream(){
+  const {g,w,h}=fit(document.getElementById('stream')); g.clearRect(0,0,w,h);
+  const gateX=w*0.62;
+  // threshold line
+  const ty=sy(thr,h);
+  g.strokeStyle='#fbbf24'; g.setLineDash([6,5]); g.lineWidth=1.6; g.globalAlpha=.85;
+  g.beginPath(); g.moveTo(0,ty); g.lineTo(w,ty); g.stroke(); g.setLineDash([]); g.globalAlpha=1;
+  g.fillStyle='#fbbf24'; g.font='10px ui-monospace,monospace'; g.textAlign='left';
+  g.fillText('gate threshold = '+thr.toFixed(2), 6, ty-5);
+  // zones
+  g.fillStyle='#6b5a8c'; g.textAlign='right';
+  g.fillText('ADMITTED ↑', w-8, 16); g.fillText('REJECTED ↓', w-8, h-8);
+  // gate post
+  g.strokeStyle='#46356b'; g.lineWidth=2; g.beginPath(); g.moveTo(gateX,0); g.lineTo(gateX,h); g.stroke();
+  // items
+  items.forEach((it,i)=>{ it.x += (gateX*1.6 - it.x)*0.04 + 2.2;
+    const x=Math.min(it.x, w-12);
+    const yS=sy(it.s,h), yQ=sy(it.q,h);
+    const burnt=it.q<BURNT;
+    const col=burnt?'#fb7185':'#34d399';
+    // lift tail (gaming): from true-q position to observed-s position
+    if(Math.abs(it.s-it.q)>0.02){ g.strokeStyle=col; g.globalAlpha=.3; g.lineWidth=1;
+      g.beginPath(); g.moveTo(x,yQ); g.lineTo(x,yS); g.stroke(); g.globalAlpha=1; }
+    // dot at observed score (that's where the gate sorts it)
+    const admitted = it.s>=thr;
+    g.fillStyle=col; g.globalAlpha=(x>=gateX-2)?(admitted?1:0.35):0.85;
+    g.beginPath(); g.arc(x,yS,4.5,0,7); g.fill(); g.globalAlpha=1;
+    // ring burnt-admitted (the alarming case)
+    if(admitted && burnt && x>=gateX-2){ g.strokeStyle='#fb7185'; g.lineWidth=2; g.globalAlpha=.9;
+      g.beginPath(); g.arc(x,yS,8,0,7); g.stroke(); g.globalAlpha=1; }
+  });
+  // label
+  g.fillStyle='#6b5a8c'; g.font='10px ui-monospace,monospace'; g.textAlign='left';
+  g.fillText('y = observed score · faint tail = adversary lift', 6, h-8);
+}
+function drawSpark(){
+  const {g,w,h}=fit(document.getElementById('spark')); g.clearRect(0,0,w,h);
+  const pad=6;
+  [0,.5,1].forEach(f=>{ const y=pad+(1-f)*(h-pad*2); g.strokeStyle='#241738'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(pad,y); g.lineTo(w-pad,y); g.stroke();
+    g.fillStyle='#4a3a6b'; g.font='9px ui-monospace,monospace'; g.textAlign='left'; g.fillText((f*100)+'%',pad+1,y-2); });
+  // shaded gap between seen and real
+  if(seenBuf.length>1){
+    g.fillStyle='rgba(251,113,133,0.14)';
+    g.beginPath();
+    const X=i=>pad+(i/(seenBuf.length-1))*(w-pad*2), Y=v=>pad+(1-v)*(h-pad*2);
+    seenBuf.forEach((v,i)=> i?g.lineTo(X(i),Y(v)):g.moveTo(X(i),Y(v)));
+    for(let i=realBuf.length-1;i>=0;i--) g.lineTo(X(i),Y(realBuf[i]));
+    g.closePath(); g.fill();
+  }
+  const plot=(buf,col)=>{ if(buf.length<2)return; g.strokeStyle=col; g.lineWidth=2; g.beginPath();
+    buf.forEach((v,i)=>{ const x=pad+(i/(buf.length-1))*(w-pad*2), y=pad+(1-v)*(h-pad*2); i?g.lineTo(x,y):g.moveTo(x,y); }); g.stroke(); };
+  plot(seenBuf,'#a78bfa'); plot(realBuf,'#fb7185');
+}
+function syncReadouts(seen,real){
+  document.getElementById('seen').textContent=Math.round(seen*100)+'%';
+  document.getElementById('real').textContent=Math.round(real*100)+'%';
+  const v=document.getElementById('verdict');
+  const captured = real>0.10;
+  v.textContent=captured?'GATE CAPTURED':'GATE HOLDING'; v.className='verdict '+(captured?'cap':'hold');
+  // matrix highlight
+  const cell='c_'+(gate==='fixed'?'fix':'adapt')+'_'+(feedback==='bit'?'bit':'score');
+  ['c_fix_bit','c_fix_score','c_adapt_bit','c_adapt_score'].forEach(id=>{
+    const el=document.getElementById(id); el.classList.remove('here');
+    el.classList.toggle('safe', id==='c_fix_bit'); el.classList.toggle('unsafe', id!=='c_fix_bit'); });
+  document.getElementById(cell).classList.add('here');
+}
+
+// ---- controls ----
+function setGate(x){ gate=x; document.getElementById('gFix').classList.toggle('on',x==='fixed'); document.getElementById('gAdapt').classList.toggle('on',x==='adaptive'); resetEngine(); }
+function setFb(x){ feedback=x; document.getElementById('fBit').classList.toggle('on',x==='bit'); document.getElementById('fScore').classList.toggle('on',x==='score'); resetEngine(); }
+function setAtk(x){ attack=x; ['aNone','aGood','aDrift'].forEach(id=>document.getElementById(id).classList.toggle('on', (id==='aNone'&&x==='none')||(id==='aGood'&&x==='goodhart')||(id==='aDrift'&&x==='drift'))); resetEngine(); }
+document.getElementById('gFix').onclick=()=>setGate('fixed');
+document.getElementById('gAdapt').onclick=()=>setGate('adaptive');
+document.getElementById('fBit').onclick=()=>setFb('bit');
+document.getElementById('fScore').onclick=()=>setFb('score');
+document.getElementById('aNone').onclick=()=>setAtk('none');
+document.getElementById('aGood').onclick=()=>setAtk('goodhart');
+document.getElementById('aDrift').onclick=()=>setAtk('drift');
+document.getElementById('adv').onclick=function(){ advOn=!advOn; this.classList.toggle('on',advOn); this.textContent=advOn?'⚔ adversary ON':'⚔ adversary OFF'; };
+let running=true, accum=0, speed=24;
+document.getElementById('run').onclick=function(){ running=!running; this.classList.toggle('on',running); this.textContent=running?'▶ run':'❚❚ paused'; if(running) requestAnimationFrame(loop); };
+document.getElementById('reset').onclick=()=>resetEngine();
+document.getElementById('speed').oninput=function(){ speed=+this.value; };
+
+resetEngine(); syncReadouts(0,0);
+function loop(){
+  CLOCK++; let r=null;
+  accum+=speed/12; let steps=0;
+  while(accum>=1 && steps<8){ r=tick(); accum--; steps++; }
+  drawStream(); drawSpark(); if(r) syncReadouts(r.seen,r.real);
+  if(running) requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
